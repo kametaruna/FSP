@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Music 9 - Select Your Best</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        .slot { border: 2px dashed #cbd5e1; aspect-ratio: 1/1; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; position: relative; cursor: pointer; background: #ffffff; transition: all 0.2s; }
+        .slot:hover { border-color: #3b82f6; background: #f8fafc; }
+        .slot img { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
+        .slot-info { z-index: 10; background: rgba(0,0,0,0.7); color: white; width: 100%; text-align: center; font-size: 0.6rem; padding: 4px 2px; position: absolute; bottom: 0; line-height: 1.2; }
+        .selected-slot { border: 3px solid #3b82f6 !important; box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
+        #capture-area { padding: 15px; background: #f1f5f9; }
+        
+        .mode-toggle { display: flex; background: #e2e8f0; padding: 4px; border-radius: 99px; margin-bottom: 20px; }
+        .mode-btn { flex: 1; padding: 8px; border-radius: 99px; font-size: 0.875rem; font-weight: bold; transition: 0.3s; text-align: center; cursor: pointer; }
+        .mode-btn.active { background: #3b82f6; color: white; }
+    </style>
+</head>
+<body class="bg-slate-200 min-h-screen p-4 font-sans text-slate-800">
+
+    <div class="max-w-md mx-auto">
+        <header class="text-center mb-4">
+            <h1 class="text-3xl font-black italic tracking-tighter text-blue-600">MY MUSIC 9</h1>
+            <p id="current-mode-label" class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Song Edition</p>
+        </header>
+
+        <div class="mode-toggle">
+            <div id="mode-song" class="mode-btn active" onclick="setMode('song')">楽曲モード</div>
+            <div id="mode-artist" class="mode-btn" onclick="setMode('artist')">アーティストモード</div>
+        </div>
+
+        <div id="capture-area" class="rounded-xl shadow-2xl mb-6">
+            <div class="grid grid-cols-3 gap-2" id="ranking-container"></div>
+        </div>
+
+        <div class="flex gap-2 mb-6">
+            <button onclick="downloadImage()" class="flex-1 bg-slate-800 text-white font-bold py-3 rounded-lg shadow-lg hover:bg-slate-700 active:scale-95 transition">画像を保存する</button>
+            <button onclick="resetAll()" class="bg-white text-slate-400 px-4 rounded-lg hover:text-red-500 transition">✕</button>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl shadow-md">
+            <div class="flex gap-2 mb-4">
+                <input type="text" id="search-input" class="flex-1 p-3 bg-slate-100 border-none rounded-lg outline-none focus:ring-2 focus:ring-blue-500" placeholder="検索ワードを入力...">
+                <button onclick="search()" class="bg-blue-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-600 transition">検索</button>
+            </div>
+            <div id="results" class="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentMode = 'song';
+        let currentSlotIndex = 0;
+        const totalSlots = 9;
+
+        function initSlots() {
+            const container = document.getElementById('ranking-container');
+            container.innerHTML = '';
+            for (let i = 0; i < totalSlots; i++) {
+                const slot = document.createElement('div');
+                slot.className = `slot ${i === 0 ? 'selected-slot' : ''}`;
+                slot.id = `slot-${i}`;
+                slot.onclick = () => selectSlot(i);
+                slot.innerHTML = `<span class="text-slate-300 font-black text-2xl">${i + 1}</span>`;
+                container.appendChild(slot);
+            }
+            currentSlotIndex = 0; // インデックスもリセット
+        }
+        initSlots();
+
+        // ★ モード切り替え（確認機能付き）
+        function setMode(mode) {
+            // 現在と同じモードを押した場合は何もしない
+            if (currentMode === mode) return;
+
+            // 確認メッセージ（テロップ代わり）
+            const modeName = mode === 'song' ? '楽曲モード' : 'アーティストモード';
+            const confirmed = confirm(`${modeName}に切り替えますか？\n（現在選択中の内容はすべてクリアされます）`);
+
+            if (confirmed) {
+                currentMode = mode;
+                
+                // 表示の更新
+                document.getElementById('mode-song').classList.toggle('active', mode === 'song');
+                document.getElementById('mode-artist').classList.toggle('active', mode === 'artist');
+                document.getElementById('current-mode-label').innerText = mode === 'song' ? 'Song Edition' : 'Artist Edition';
+                document.getElementById('search-input').placeholder = mode === 'song' ? '楽曲名・アーティスト名で検索...' : 'アーティスト名で検索...';
+                
+                // 選択中の要素をクリア
+                initSlots();
+                document.getElementById('results').innerHTML = '';
+                document.getElementById('search-input').value = '';
+            }
+        }
+
+        function selectSlot(index) {
+            document.querySelectorAll('.slot').forEach(el => el.classList.remove('selected-slot'));
+            currentSlotIndex = index;
+            document.getElementById(`slot-${index}`).classList.add('selected-slot');
+        }
+
+        async function search() {
+            const query = document.getElementById('search-input').value;
+            if (!query) return;
+
+            const entity = currentMode === 'song' ? 'song' : 'album';
+            const url = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=${entity}&limit=15&country=jp`;
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                displayResults(data.results);
+            } catch (error) {
+                alert("検索に失敗しました。");
+            }
+        }
+
+        function displayResults(items) {
+            const resultContainer = document.getElementById('results');
+            resultContainer.innerHTML = '';
+            items.forEach(item => {
+                const div = document.createElement('div');
+                div.className = "flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-100 cursor-pointer hover:border-blue-300 transition";
+                
+                const artworkUrl = (item.artworkUrl100 || "").replace('100x100bb', '600x600bb');
+                const title = currentMode === 'song' ? item.trackName : item.collectionName;
+                const subTitle = item.artistName;
+
+                div.innerHTML = `
+                    <img src="${item.artworkUrl60}" class="w-12 h-12 rounded shadow-sm">
+                    <div class="flex-1 overflow-hidden">
+                        <div class="font-bold text-sm truncate">${title}</div>
+                        <div class="text-xs text-slate-500 truncate">${subTitle}</div>
+                    </div>
+                `;
+                div.onclick = () => {
+                    const slot = document.getElementById(`slot-${currentSlotIndex}`);
+                    const displayText = currentMode === 'song' ? `<strong>${title}</strong><br>${subTitle}` : `<strong>${subTitle}</strong>`;
+                    slot.innerHTML = `<img src="${artworkUrl}"><div class="slot-info">${displayText}</div>`;
+                    selectSlot((currentSlotIndex + 1) % totalSlots);
+                };
+                resultContainer.appendChild(div);
+            });
+        }
+
+        function downloadImage() {
+            const area = document.getElementById('capture-area');
+            html2canvas(area, { useCORS: true, scale: 2 }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = `my-music-9-${currentMode}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            });
+        }
+
+        function resetAll() {
+            if(confirm('選択をすべてリセットしますか？')) initSlots();
+        }
+    </script>
+</body>
+</html>
